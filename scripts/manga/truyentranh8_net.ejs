@@ -1,0 +1,94 @@
+<%
+var TT8Handler = function($, page, options, callback) {
+  if ($('.xemtruyen').length) {
+    page.title = $('title').first().text();
+    if (page.title) {
+      page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
+    }
+
+    var chapter_title = $('.TitleH2').text();
+
+    var chapter_script = $('.xemtruyen script').html();
+    if (!chapter_script) {
+      return callback();
+    }
+
+    var tmp_arr = chapter_script.match(/lstImages\.push(.*?)(?=[;]|$)/g);
+    if (!tmp_arr) {
+      return callback();
+    }
+      
+    var tmp_images = [];
+    for (var i = 0; i < tmp_arr.length; i++) {
+      tmp_arr[i] = replaceAll(tmp_arr[i], 'lstImages.push("', '');
+      tmp_arr[i] = replaceAll(tmp_arr[i], '")', '');
+      tmp_images.push(tmp_arr[i]);
+    }
+
+    var image_file_names = [];
+    var chapter_images = [];
+    tmp_images.forEach(function(image_src) {
+      var image_url = image_src;
+      var image_url_obj = urlutil.parse(image_url);
+      var image_file_name = path.basename(image_url_obj.pathname);
+      image_file_name = getUniqueFileName(image_file_names, image_file_name);
+      chapter_images.push({
+        image_src: image_url,
+        image_file: image_file_name
+      });
+    });
+    console.log(chapter_images);
+
+    var state_data = {
+      output_dir: path.basename(page.output_dir),
+      chapter_title: chapter_title,
+      chapter_images: chapter_images,
+      done: false
+    };
+    saver.setStateData(page.url, state_data);
+
+    saver.downloadImages(chapter_images, { 
+      output_dir: page.output_dir,
+      skip_if_exist: true
+    }, function(err, images) {
+      if (err) {
+        console.log(err);
+        return callback(err);
+      }
+
+      saver.updateStateData(page.url, { 
+        chapter_images: images, 
+        done: true, 
+        last_update: new Date() 
+      }, true);
+
+      saver.renderTemplate('mangaviewer.ejs', {
+        chapter_title: chapter_title,
+        chapter_images: images
+      }, function(err, result) {
+        if (!err) {
+          saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
+        }
+        callback();
+      });
+    });
+  } else if ($('#ChapList').length) {
+
+    saver.setStateData('url', page.url);
+
+    page.chapter_links = saver.getLinks($, page, '#ChapList');
+    console.log(page.chapter_links);
+
+    saver.processPages(page.chapter_links, options, function(err) {
+      if (err) return callback(err);
+      callback();
+    });
+  } else {
+    callback();
+  }
+}
+
+saver.bindPageHandler('truyentranh8.net', TT8Handler);
+saver.bindPageHandler('truyentranh8.com', TT8Handler);
+
+%>

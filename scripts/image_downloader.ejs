@@ -1,0 +1,184 @@
+<%
+// options
+// {
+//   output_dir: String,
+//   link_blacklist: [String],
+//   link_filters: [String],
+//   image_blacklist: [String],
+//   image_filters: [String],
+//   page_validator: function($, page) {}
+//   page_content_container: String, (SELECTOR)
+//   list_validator: function($, page) {}
+//   list_content_container: String, (SELECTOR)
+// }
+var ImageDownloader = function(saver, options) {
+  this._saver = saver;
+  this._options = options;
+
+  this._output_dir = options.output_dir || '.';
+  console.log('output_dir: ' + this._output_dir);
+
+  this._visited_links = [];
+  
+  this._link_blacklist = options.link_blacklist || [];
+  this._link_filters = options.link_filters || [];
+
+  this._image_blacklist = options.link_blacklist || [];
+  this._image_filters = options.image_filters || [];
+
+  this._page_validator = options.page_validator;
+  this._page_content_container = options.page_content_container;
+
+  this._list_validator = options.list_validator;
+  this._list_content_container = options.list_content_container;
+
+  if (typeof this._page_validator == 'undefined') {
+    this._config_error_message = 'Missing required options (page_validator)';
+    this._config_error = true;
+  } 
+  else if (typeof this._page_content_container == 'undefined') {
+    this._config_error_message = 'Missing required options (page_content_container)';
+    this._config_error = true;
+  } 
+  else if (typeof this._list_validator == 'undefined') {
+    this._config_error_message = 'Missing required options (list_validator)';
+    this._config_error = true;
+  } 
+  else if (typeof this._list_content_container == 'undefined') {
+    this._config_error_message = 'Missing required options (list_content_container)';
+    this._config_error = true;
+  } 
+  else if (typeof this._page_validator != 'function') {
+    this._config_error_message = 'page_validator is not function';
+    this._config_error = true;
+  }
+  else if (typeof this._list_validator != 'function') {
+    this._config_error_message = 'list_validator is not function';
+    this._config_error = true;
+  }
+
+  if (this._config_error) {
+    console.log('Config error! ' + this._config_error_message);
+  }
+}
+
+ImageDownloader.prototype.savePageContent = function($, page, callback) {
+  var self = this;
+  if (self._config_error) {
+    return callback(new Error('Config error! ' + self._config_error_message));
+  }
+
+  if (self._page_validator($, page)) {
+    page.title = $('title').first().text();
+    if (page.title) {
+      page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
+    }
+
+    page.images = getImages($, page, self._page_content_container, self._image_blacklist, self._image_filters);
+    console.log(page.images);
+
+    if (page.images.length == 0) {
+      return callback();
+    }
+
+    var state_data = {
+      output_dir: page.output_dir.replace(self._output_dir + '/', ''),
+      title: page.title,
+      images: page.images,
+      done: false
+    };
+    self._saver.setStateData(page.url, state_data);
+
+    self._saver.downloadImages(page.images, { 
+      output_dir: page.output_dir,
+      skip_if_exist: true
+    }, function(err, images) {
+      if (err) {
+        return callback(err);
+      }
+
+      self._saver.updateStateData(page.url, { 
+        images: images, 
+        done: true,
+        last_update: new Date() 
+      }, true);
+
+      callback();
+    });
+  } else if (self._list_validator($, page)) {
+
+    var result_links = getLinks2($, page, self._list_content_container, self._link_blacklist, 
+      self._visited_links, self._link_filters);
+    console.log(result_links);
+
+    if (result_links.length == 0) {
+      return callback();
+    }
+    
+    self._visited_links = self._visited_links.concat(result_links);
+
+    self.processList(result_links, function(err) {
+      if (err) {
+        return callback(err);
+      }
+      callback();
+    });
+  } else {
+    callback();
+  }
+}
+
+ImageDownloader.prototype.processList = function(links, callback) {
+  var self = this;
+  if (self._config_error) {
+    return callback(new Error('Config error! ' + self._config_error_message));
+  }
+
+  var current = 0;
+  var total = links.length;
+
+  async.eachSeries(links, function(link, cb) {
+
+    current++;
+
+    if (typeof self._options.refresh == 'undefined') {
+      var saved_link = self._saver.getStateData(link);
+      if (saved_link && saved_link.done) {
+        return cb();
+      }
+    }
+
+    console.log('[' + current + '/' + total + '] Page URL: ' + link);
+
+    var link_obj = urlutil.parse(link);
+    var output_dir = path.basename(link_obj.pathname,'.html');
+    output_dir = (self._output_dir || '.') + '/' + output_dir;
+    console.log('[' + current + '/' + total + '] Output directory: ' + output_dir);
+    
+    self._saver.downloadHtml(link, function(err, result) {
+      if (err) {
+        console.log('Download HTML error! ' + link);
+        return cb(err);
+      }
+      
+      var $ = cheerio.load(result.html);
+      var page_obj = {
+        url: result.resolved_url,
+        output_dir: output_dir
+      };
+
+      self.savePageContent($, page_obj, function(err) {
+        if (err) {
+          return cb(err);
+        }
+        cb();
+      });
+    });
+  }, function(err) {
+    if (err) {
+      return callback(err);
+    }
+    callback();
+  });
+}
+%>

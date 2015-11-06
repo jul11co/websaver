@@ -1,0 +1,388 @@
+#!/usr/bin/env node
+
+var async = require('async');
+var path = require('path');
+var Saver = require('./lib/saver.js');
+
+function printUsage() {
+  console.log('Usage: websaver <COMMAND> [OPTIONS...]');
+  console.log('');
+  console.log('  Download page to local directory:');
+  console.log('       websaver download <page_url> <output_dir> [--force]');
+  console.log('');
+  console.log('  Update local directory:');
+  console.log('       websaver update <output_dir>');
+  console.log('');
+  console.log('  Add to download list (into state file in parent directory):');
+  console.log('       websaver add-page <page_url> <output_dir>');
+  console.log('');
+  console.log('  Download images to local directory:');
+  console.log('       websaver download-image <page_url> <output_dir> [SELECTOR]');
+  console.log('');
+  console.log('  Run script:');
+  console.log('       websaver run-script <SCRIPT-FILE> <page_url> <output_dir>');
+  console.log('');
+}
+
+if (process.argv.length < 3) {
+  printUsage();
+  process.exit();
+  return;
+}
+
+process.on('SIGINT', function() {
+  console.log("\nCaught interrupt signal");
+  process.exit();
+});
+
+var options = {};
+for (var i = 0; i < process.argv.length; i++) {
+  if (process.argv[i] == '--force') {
+    options.force = true;
+  } else if (process.argv[i] == '--verbose') {
+    options.verbose = true;
+  }
+}
+
+var command = process.argv[2];
+if (command == 'download') {
+  options.download = true;
+
+  if (process.argv.length < 5) {
+    printUsage();
+    process.exit();
+  } else {
+    var page_url = process.argv[3];
+    options.page_url = page_url;
+    console.log('Page URL: ' + page_url);
+
+    var output_dir = process.argv[4];
+    options.output_dir = output_dir;
+    console.log('Output directory: ' + options.output_dir);
+
+    var saver = new Saver(options);
+    var state = saver.loadStateSync(options.output_dir);
+    if (!options.force && state != null) {
+      console.log('Warning: State file exists in output directory. Append --force to override/overwrite this.');
+      process.exit();
+    } else {
+      var output_dir_name = path.basename(options.output_dir);
+      var parent_dir = path.resolve(output_dir, '..');
+
+      var parent_saver = new Saver({ output_dir: parent_dir });
+      parent_saver.updateStateData(page_url, { output_dir: output_dir_name });
+      parent_saver.saveStateSync(parent_dir);
+
+      saver.on('exit', function(err) {
+        var parent_saver = new Saver({ output_dir: parent_dir });
+        if (err) {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: false,
+            last_update: new Date() 
+          });
+        } else {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: true,
+            last_update: new Date() 
+          });
+        }
+        parent_saver.saveStateSync(parent_dir);
+      });
+
+      saver.start(options, function(err) {
+        if (err) {
+          console.log(err);
+          process.exit();
+        }
+      });
+    }
+  }
+} else if (command == 'update') {
+  options.update = true;
+
+  if (process.argv.length < 4) {
+    printUsage();
+    process.exit();
+  } else {
+    var output_dir = process.argv[3];
+    options.output_dir = output_dir;
+    console.log('Output directory: ' + options.output_dir);
+
+    // options.save_state_on_exit = false;
+    var saver = new Saver(options);
+    var state = saver.loadStateSync(options.output_dir);
+    if (state == null) {
+      console.log('State file doesn\'t exist');
+      process.exit();
+    } else {
+      var page_url = saver.getStateData('url');
+      if (typeof page_url != 'undefined') {
+        if (page_url == '') {
+          console.log('Error: "url" field left empty');
+          process.exit();
+        } else {
+          console.log('Update from URL: ' + page_url);
+          options.page_url = page_url;
+          saver.on('exit', function(err) {
+            // update state file in parent directory
+            var output_dir_name = path.basename(options.output_dir);
+            var parent_dir = path.resolve(options.output_dir, '..');
+            var parent_saver = new Saver({ output_dir: parent_dir });
+            if (err) {
+              parent_saver.updateStateData(page_url, {
+                output_dir: output_dir_name,
+                done: false,
+                last_update: new Date() 
+              });  
+            } else {
+              parent_saver.updateStateData(page_url, {
+                output_dir: output_dir_name,
+                done: true,
+                last_update: new Date() 
+              });
+            }  
+            parent_saver.saveStateSync(parent_dir);
+            parent_saver.exit();
+          });
+          saver.start(options, function(err) {
+            if (err) {
+              console.log(err);
+              process.exit();
+            }
+          });
+        }
+      } else {
+        var isHttpUrl = function(string) {
+          var pattern = /^((http|https):\/\/)/;
+          return pattern.test(string);
+        }
+        var download_queue = [];
+        for (var prop in state) {
+          if (isHttpUrl(prop) && typeof state[prop] == 'object') {
+            var page = state[prop];
+            var download_page_url = prop;
+            var download_output_dir = page.output_dir;
+            var done = page.done || false;
+            var ignore = page.ignore || false;
+            if ((options.force || !done) && !ignore 
+              && typeof download_output_dir == 'string' && download_output_dir != '') {
+              download_queue.push({
+                page_url: download_page_url,
+                output_dir: output_dir + '/' + download_output_dir
+              });
+            }
+          }
+        }
+        console.log(download_queue);
+        async.eachSeries(download_queue, function(download_item, cb) {
+          var download_err = null;
+          var saver_options = {
+            page_url: download_item.page_url,
+            output_dir: download_item.output_dir,
+            update: true
+          };
+          // saver for processing each download item
+          var child_saver = new Saver(saver_options);
+          child_saver.on('exit', function(err) {
+            if (options.verbose) {
+              console.log('Saver exited: ' + download_item.page_url);
+            }
+            // saver for processing parent state file
+            var output_dir_name = path.basename(download_item.output_dir);
+            if (err) {
+              if (options.verbose) {
+                console.log('Child saver exited with error');
+              }
+              saver.updateStateData(download_item.page_url, {
+                output_dir: output_dir_name,
+                done: false,
+                last_update: new Date() 
+              });  
+            } else {
+              if (options.verbose) {
+                console.log('Child saver exited with success');
+              }
+              saver.updateStateData(download_item.page_url, {
+                output_dir: output_dir_name,
+                done: true,
+                last_update: new Date() 
+              });
+            }            
+            saver.saveStateSync(options.output_dir);
+            if (!download_err) {
+              download_err = err;
+              cb(err);
+            }
+          });
+          child_saver.start(saver_options, function(err) {
+            if (err) {
+              if (!download_err) {
+                download_err = err;
+                return cb(err);
+              }
+              return;
+            }
+          });
+        }, function(err) {
+          if (err) {
+            console.log(err);
+            process.exit();
+          }
+        });
+      }
+    }
+  }
+} else if (command == 'add-page') {
+  options.add_page = true;
+
+  if (process.argv.length < 5) {
+    printUsage();
+    process.exit();
+  } else {
+    var page_url = process.argv[3];
+    options.page_url = page_url;
+    console.log('Page URL: ' + page_url);
+
+    var output_dir = process.argv[4];
+    options.output_dir = output_dir;
+    console.log('Output directory: ' + options.output_dir);
+
+    var saver = new Saver({});
+    var state = saver.loadStateSync(output_dir);
+    if (state != null) {
+      console.log('Warning: State file exists in output directory.');
+    }
+
+    var output_dir_name = path.basename(output_dir);
+    var parent_dir = path.resolve(output_dir, '..');
+
+    var parent_saver = new Saver({ output_dir: parent_dir });
+    var current_data = parent_saver.getStateData(page_url);
+    if (!options.force && current_data) {
+      console.log('Warning: This page already added. Append --force to override/overwrite this.');
+      console.log(current_data);
+      process.exit();
+    } else {
+      parent_saver.updateStateData(page_url, { output_dir: output_dir_name });
+      parent_saver.saveStateSync(parent_dir);
+      console.log('Done. Added page to state file at: ' + parent_dir); 
+    }
+  }
+} else if (command == 'download-image') {
+  options.download_image = true;
+
+  if (process.argv.length < 5) {
+    printUsage();
+    process.exit();
+  } else {
+    var page_url = process.argv[3];
+    options.page_url = page_url;
+    console.log('Page URL: ' + page_url);
+
+    var output_dir = process.argv[4];
+    options.output_dir = output_dir;
+    console.log('Output directory: ' + options.output_dir);
+
+    if (process.argv.length > 5) {
+      options.selector = process.argv[5];
+      console.log('Selector: ' + options.selector); 
+    }
+
+    // same with download
+    var saver = new Saver(options);
+    var state = saver.loadStateSync(options.output_dir);
+    if (!options.force && state != null) {
+      console.log('Warning: State file exists in output directory. Append --force to override/overwrite this.');
+      process.exit();
+    } else {
+      var output_dir_name = path.basename(options.output_dir);
+      var parent_dir = path.resolve(output_dir, '..');
+
+      saver.on('exit', function(err) {
+        var parent_saver = new Saver({ output_dir: parent_dir });
+        if (err) {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: false,
+            last_update: new Date() 
+          });
+        } else {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: true,
+            last_update: new Date() 
+          });
+        }
+        parent_saver.saveStateSync(parent_dir);
+        parent_saver.exit();
+      });
+
+      saver.start(options, function(err) {
+        if (err) {
+          console.log(err);
+          process.exit();
+        }
+      });
+    }
+  }
+} else if (command == 'run-script') {
+  options.run_script = true;
+
+  if (process.argv.length < 6) {
+    printUsage();
+    process.exit();
+  } else {
+    options.script_file = process.argv[3];
+    console.log('Script file: ' + options.script_file);
+
+    var page_url = process.argv[4];
+    options.page_url = page_url;
+    console.log('Page URL: ' + page_url);
+
+    var output_dir = process.argv[5];
+    options.output_dir = output_dir;
+    console.log('Output directory: ' + options.output_dir);
+
+    // same with download
+    var saver = new Saver(options);
+    var state = saver.loadStateSync(options.output_dir);
+    if (!options.force && state != null) {
+      console.log('Warning: State file exists in output directory. Append --force to override/overwrite this.');
+      process.exit();
+    } else {
+      var output_dir_name = path.basename(options.output_dir);
+      var parent_dir = path.resolve(output_dir, '..');
+
+      saver.on('exit', function(err) {
+        var parent_saver = new Saver({ output_dir: parent_dir });
+        if (err) {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: false,
+            last_update: new Date() 
+          });
+        } else {
+          parent_saver.updateStateData(page_url, {
+            output_dir: output_dir_name,
+            done: true,
+            last_update: new Date() 
+          });
+        }
+        parent_saver.saveStateSync(parent_dir);
+      });
+
+      saver.start(options, function(err) {
+        if (err) {
+          console.log(err);
+          process.exit();
+        }
+      });
+    }
+  }
+} else {
+  printUsage();
+  process.exit();
+}
+

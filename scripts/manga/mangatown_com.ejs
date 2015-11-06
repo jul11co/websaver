@@ -1,0 +1,142 @@
+<%
+saver.bindPageHandler('www.mangatown.com/manga/', function($, page, options, callback) {
+  if ($('#viewer').length) {
+
+    var links = saver.getLinks($, page, '.page_select');
+    // console.log(links);
+
+    if (typeof options.chapter_pages == 'undefined') {
+      // It's is a page of a manga chapter
+      // Init data holder for chapter pages in options (passed through all callback)
+      options.chapter_pages = {};
+    }
+
+    for (var i = 0; i < links.length; i++) {
+      var chapter_page_link = links[i];
+      if (typeof options.chapter_pages[chapter_page_link] == 'undefined') {
+        options.chapter_pages[chapter_page_link] = {
+          visited: false,
+          images: []
+        };
+      }
+    }
+
+    if (typeof options.chapter_pages != 'undefined' 
+      && typeof options.chapter_pages[page.url] != 'undefined') {
+      options.chapter_pages[page.url].visited = true;
+    } else {
+      console.log('Wrong state! This page not included in chapter links');
+      return callback();
+    }
+
+    // Get images on current page
+    var images = saver.getImages($, page, '#viewer');
+    console.log(images);
+
+    // Save to options
+    options.chapter_pages[page.url].images = options.chapter_pages[page.url].images.concat(images);
+    // console.log(options.chapter_pages);
+
+    // Check if all chapter pages are visited
+    var all_chapter_pages_visited = true;
+    for (var prop in options.chapter_pages) {
+      if (options.chapter_pages[prop].visited == false) {
+        all_chapter_pages_visited = false;
+        break;
+      }
+    }
+
+    if (all_chapter_pages_visited) {
+      console.log('All chapter pages were visited. It\'s time to download');
+
+      // It's time to download images
+      var chapter_images = [];
+      for (var prop in options.chapter_pages) {
+        var chapter_page = options.chapter_pages[prop];
+        chapter_images = chapter_images.concat(chapter_page.images);
+      }
+      // console.log(chapter_images);
+
+      // Reset chapter pages
+      options.chapter_pages = {};
+
+      var link_obj = urlutil.parse(page.url);
+      var chapter_url = page.url.replace(path.basename(link_obj.pathname),'');
+      var output_dir_name = path.basename(path.dirname(link_obj.pathname));
+      var output_dir = (options.output_dir || '.') + '/' + output_dir_name;
+      
+      // console.log('Options output dir : ' + options.output_dir);
+      // console.log('Page output dir    : ' + page.output_dir);
+      // console.log('Output dir         : ' + output_dir);
+
+      var chapter_title = $('.manga_read .title').text().trim();
+      chapter_title = replaceAll(chapter_title, '\r\n', '').trim();
+
+      // Save current state
+      var state_data = {
+        output_dir: path.basename(output_dir),
+        chapter_title: chapter_title,
+        chapter_images: chapter_images,
+        done: false
+      };
+      saver.setStateData(chapter_url, state_data);
+
+      // Download chapter_images here
+      saver.downloadImages(chapter_images, {
+        output_dir: output_dir,
+        skip_if_exist: true
+      }, function(err, images) {
+        if (err) {
+          console.log(err);
+          return callback(err);
+        }
+
+        saver.updateStateData(chapter_url, {
+          chapter_images: images, 
+          done: true, 
+          last_update: new Date() 
+        }, true);
+
+        saver.renderTemplate('mangaviewer.ejs', {
+          chapter_title: chapter_title,
+          chapter_images: images
+        }, function(err, result) {
+          if (!err) {
+            saver.saveHtmlSync(output_dir + '/reader.html', result.html);
+          }
+          // exit here
+          callback();
+        });
+      });
+    } else {
+
+      // Get next unprocessed page in options.chapter_pages
+      var next_page = '';
+      for (var prop in options.chapter_pages) {
+        if (options.chapter_pages[prop].visited == false) {
+          next_page = prop;
+          break;
+        }
+      }
+
+      // Process next page
+      saver.processPage(next_page, options, function(err) {
+        if (err) {
+          return callback(err);
+        }
+        callback();
+      });
+    }
+  } else if ($('.chapter_list').length) {
+    var chapter_links = saver.getLinks($, page, '.chapter_list');
+    console.log(chapter_links);
+
+    saver.processPages(chapter_links, options, function(err) {
+      if (err) return callback(err);
+      callback();
+    });
+  } else {
+    callback();
+  }
+});
+%>

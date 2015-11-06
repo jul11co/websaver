@@ -1,0 +1,59 @@
+<%
+saver.bindPageHandler('blogtruyen.com', function($, page, options, callback) {
+  if ($('.al-c.linkchapter').length) {
+
+    var chapter_title = $('header h1').eq(0).text();
+
+    var chapter_images = saver.getImages($, page, 'article#content');
+    console.log(chapter_images);
+
+    var state_data = {
+      output_dir: path.basename(page.output_dir),
+      chapter_title: chapter_title,
+      chapter_images: chapter_images,
+      done: false
+    };
+    saver.setStateData(page.url, state_data);
+
+    saver.downloadImages(chapter_images, { 
+      output_dir: page.output_dir,
+      skip_if_exist: true
+    }, function(err, images) {
+      if (err) {
+        console.log(err);
+        return callback(err);
+      }
+
+      saver.updateStateData(page.url, { 
+        chapter_images: images, 
+        done: true, 
+        last_update: new Date() 
+      }, true);
+
+      saver.renderTemplate('mangaviewer.ejs', {
+        chapter_title: chapter_title,
+        chapter_images: images
+      }, function(err, result) {
+        if (!err) {
+          saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
+        }
+        callback();
+      });
+    });
+  } else if ($('#list-chapters').length) {
+
+    saver.setStateData('url', page.url);
+    
+    $('#list-chapters .download').remove();
+    page.chapter_links = saver.getLinks($, page, '#list-chapters', { filters: ['http://blogtruyen.com/truyen/'] });
+    console.log(page.chapter_links);
+
+    saver.processPages(page.chapter_links, options, function(err) {
+      if (err) return callback(err);
+      callback();
+    });
+  } else {
+    callback();
+  }
+});
+%>

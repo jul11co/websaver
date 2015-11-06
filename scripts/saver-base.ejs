@@ -1,0 +1,290 @@
+<%
+function urlGetHost(_url) {
+  if (!_url || _url == '') return '';
+  var host_url = '';
+  var url_obj = urlutil.parse(_url);
+  if (url_obj.slashes) {
+    host_url = url_obj.protocol + '//' + url_obj.host;
+  } else {
+    host_url = url_obj.protocol + url_obj.host;
+  }
+  return host_url;
+}
+
+function isValidLink(link_href) {
+  if (!link_href || link_href === '') return false;
+  if (link_href.indexOf('#') == 0 
+    || link_href.indexOf('mailto:') >= 0 
+    || link_href.indexOf('javascript:') == 0) {
+    return false;
+  }
+  return true;
+}
+
+function getUniqueFileName(file_names, file_name) {
+  var result_file_name = file_name;
+  var collision = false;
+  for (var i = 0; i < file_names.length; i++) {
+    if (file_name == file_names[i].file_name) {
+      collision = true;
+      file_names[i].current_index++;
+      var file_name_ext = path.extname(file_name);
+      var file_name_base = path.basename(file_name, file_name_ext);
+      result_file_name = file_name_base + '(' + file_names[i].current_index + ')' + file_name_ext;
+    }
+  }
+  if (!collision) {
+    file_names.push({
+      file_name: file_name,
+      current_index: 0
+    });
+  }
+  return result_file_name;
+}
+
+function escapeRegExp(string) {
+  return string.replace(/([.*+?^=!:${}()|\[\]\/\\])/g, "\\$1");
+}
+
+function replaceAll(string, find, replace) {
+  return string.replace(new RegExp(escapeRegExp(find), 'g'), replace);
+}
+
+function extractSubstring(original, prefix, suffix) {
+  if (!original) return '';
+  var tmp = original.substring(original.indexOf(prefix) + prefix.length);
+  tmp = tmp.substring(0, tmp.indexOf(suffix));
+  return tmp;
+}
+
+// options
+// {
+//   blacklist: [String],
+//   visited_links: [String],
+//   filters: [String]
+// }
+saver.getLinks = function($, page, selector, options) {
+  // console.log('getLinks()');
+  var blacklist = (options) ? options.blacklist : undefined;
+  var visited_links = (options) ? options.visited_links : undefined;
+  var filters = (options) ? options.filters : undefined;
+  var links = [];
+  var page_host_url = urlGetHost(page.url);
+  var page_host_url_obj = urlutil.parse(page_host_url);
+  var page_url_obj = urlutil.parse(page_host_url);
+  $('' + selector + ' a').each(function(){
+    var link_href = $(this).attr('href');
+    if (!isValidLink(link_href)) return;
+    var link_url = link_href;
+    link_url = link_url.replace('http:///', '/');
+    if (link_url.indexOf('//') == 0) {
+      link_url = page_host_url_obj.protocol + link_url;
+    }
+    var link_url_obj = urlutil.parse(link_url);
+    if (!link_url_obj.host) {
+      if (link_url.indexOf('/') > 0) {
+        link_url = urlutil.resolve(page_host_url_obj, link_url_obj);
+      } else {
+        link_url = urlutil.resolve(page_url_obj, link_url_obj);
+      }
+    } else {
+      link_url = urlutil.format(link_url_obj);
+    }
+    $(this).attr('href', link_url);
+    link_url = link_url.split('#')[0];
+    if (typeof blacklist != 'undefined') {
+      for (var i = 0; i < blacklist.length; i++) {
+        if (link_url.indexOf(blacklist[i]) >= 0) return;
+      }
+    }
+    if (typeof visited_links != 'undefined') {
+      if (visited_links.indexOf(link_url) >= 0) return;
+    }
+    if (typeof filters != 'undefined') {
+      for (var i = 0; i < filters.length; i++) {
+        if (link_url.indexOf(filters[i]) == -1) return;
+      }
+    }
+    if (links.indexOf(link_url) == -1) {
+      links.push(link_url);
+    }
+  });
+  return links;
+}
+
+// options
+// {
+//   blacklist: [String],
+//   filters: [String]
+// }
+saver.getImages = function($, page, selector, options) {
+  // console.log('getImages()');
+  var blacklist = (options) ? options.blacklist : undefined;
+  var filters = (options) ? options.filters : undefined;
+  var image_file_names = [];
+  var images = [];
+  var page_host_url = urlGetHost(page.url);
+  var page_host_url_obj = urlutil.parse(page_host_url);
+  $('' + selector + ' img').each(function(){
+    var image_src = $(this).attr('src');
+    if (image_src && image_src != "") {
+      if (image_src.indexOf('data:') == 0) return;
+      var image_url = image_src;
+      if (image_url.indexOf('//') == 0) {
+        image_url = page_host_url_obj.protocol + image_url;
+      }
+      var image_url_obj = urlutil.parse(image_url);
+      if (!image_url_obj.host) {
+        image_url = urlutil.resolve(page_host_url_obj, image_url_obj);
+      } else {
+        image_url = urlutil.format(image_url_obj);
+      }
+      if (typeof blacklist != 'undefined') {
+        for (var i = 0; i < blacklist.length; i++) {
+          if (image_url.indexOf(blacklist[i]) >= 0) return;
+        }
+      }
+      if (typeof filters != 'undefined') {
+        for (var i = 0; i < filters.length; i++) {
+          if (image_url.indexOf(filters[i]) == -1) return;
+        }
+      }
+      var image_file_name = path.basename(image_url_obj.pathname);
+      image_file_name = getUniqueFileName(image_file_names, image_file_name);
+      images.push({
+        image_src: image_url,
+        image_file: image_file_name
+      });
+    }
+  });
+  return images;
+}
+
+saver.page_handlers = {};
+
+saver.bindPageHandler = function(pattern, handler) {
+  this.page_handlers[pattern] = handler;
+}
+
+saver.processPage = function(link, options, callback) {
+  var self = this;
+  if (typeof options.retry_count == 'undefined' 
+    || options.retry_count > 3) {
+    options.retry_count = 0;
+  }
+  // console.log('Process page: ', link, ', ', options);
+  self.downloadPage(link, function(err, result) {
+    if (err) {
+      if (err.code == "ESOCKETTIMEDOUT" || err.code == "ETIMEDOUT" || err.code == "ECONNRESET") {
+        if (options.retry_count <= 3) {
+          options.retry_count++;
+          console.log('Timeout! Retrying...');
+          setTimeout(function() {
+            return self.processPage(link, options, callback);
+          }, 5000);
+          return;
+        }
+      }
+      return callback(err);
+    }
+    if (!result.$) {
+      return callback(new Error('Invalid HTML ($==null)'));
+    }
+    
+    options.retry_count = 0;
+
+    var $ = result.$;
+    var page = { url: result.url };
+    page.title = $('title').first().text();
+    if (page.title) {
+      page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
+    }
+
+    if (options.verbose) console.log("Page URL: " + page.url);
+
+    var link_obj = urlutil.parse(page.url);
+    var output_dir_name = path.basename(link_obj.pathname);
+    var output_dir = (options.output_dir || '.') + '/' + output_dir_name;
+    if (options.verbose) console.log('Output directory: ' + output_dir);
+    
+    page.output_dir = output_dir;
+
+    var handlers = [];
+    for (var prop in self.page_handlers) {
+      if (result.url.indexOf(prop) >= 0) {
+        handlers.push(self.page_handlers[prop]);
+      }
+    }
+    async.eachSeries(handlers, function(handler, cb) {
+      handler($, page, options, function(err) {
+        if (err) return cb(err);
+        cb();
+      });
+    }, function(err) {
+      if (err) return callback(err);
+      callback();
+    });
+  });
+}
+
+saver.processPages = function(links, options, callback) {
+  var self = this;
+
+  // console.log('Process pages: ', links, ', ', options);
+  if (!links || links.length == 0) {
+    return callback();
+  }
+  var process_queue = [];
+  for (var i = 0; i < links.length; i++) {
+    var link = links[i];
+    if (typeof options.refresh == 'undefined') {
+      var saved_data = saver.getStateData(link);
+      if (typeof saved_data == 'undefined' || !saved_data.done) {
+        process_queue.push(link);
+      }
+    }
+  }
+
+  if (process_queue.length == 0) {
+    return callback();
+  }
+
+  var current = 0;
+  var total = process_queue.length;
+
+  async.eachSeries(process_queue, function(link, cb) {
+    current++;
+    console.log("[" + current + "/" + total + "] Visit page: " + link);
+    self.processPage(link, options, function(err) {
+      if (err) {
+        console.log('Process page error! ' + link);
+        return cb(err);
+      }
+      setTimeout(cb, 1000); // delay
+    });
+  }, function(err) {
+    if (err) {
+      return callback(err);
+    }
+    callback();
+  });
+}
+%>
+
+<%include download_image%>
+<%include manga/index%>
+
+<%
+var scriptMain = function(options) {
+  saver.processPage(options.page_url, options, function(err) {
+    if (err) {
+      console.log(err);
+      saver.exit(err);
+    } else {
+      saver.exit();  
+    }
+  });
+}
+
+scriptMain(options);
+%>
