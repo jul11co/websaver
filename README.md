@@ -2,6 +2,15 @@
 Extensible web content downloader
 
 ####Install
+
+From npm
+
+[![NPM](https://nodei.co/npm/websaver.png)](https://npmjs.org/package/websaver)
+```
+npm install -g websaver
+```
+
+From source
 ```
 git clone https://github.com/jul11co/websaver.git
 npm install -g websaver/
