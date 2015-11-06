@@ -7,28 +7,36 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
     if (page.url.indexOf('.html') > 0) {
       chapter_url = page.url.replace(path.basename(link_obj.pathname),'');
     }
+    // console.log('Page URL: ' + page.url);
     // console.log('Manga chapter page: ' + chapter_url);
 
     var links = [];
-    if ($('#top_center_bar .r.m .prev_page').length) {
-      var prev_page = $('#top_center_bar .r.m .prev_page').attr('href');
-      // console.log('prev_page=' + prev_page);
-      if (prev_page.indexOf(chapter_url) >= 0) {
-        // previous page in same chapter
-        links.push(prev_page);  
-      }
-    }
-    if ($('#top_center_bar .r.m .next_page').length) {
-      var next_page = $('#top_center_bar .r.m .next_page').attr('href');
-      // console.log('next_page=' + next_page);
-      if (next_page.indexOf(chapter_url) >= 0) {
-        // next page in same chapter
-        links.push(next_page); 
-      }
-    }
+    // if ($('#top_center_bar .r.m .prev_page').length) {
+    //   var prev_page = $('#top_center_bar .r.m .prev_page').attr('href');
+    //   // console.log('prev_page=' + prev_page);
+    //   if (prev_page.indexOf(chapter_url) >= 0) {
+    //     // previous page in same chapter
+    //     links.push(prev_page);  
+    //   }
+    // }
+    // if ($('#top_center_bar .r.m .next_page').length) {
+    //   var next_page = $('#top_center_bar .r.m .next_page').attr('href');
+    //   // console.log('next_page=' + next_page);
+    //   if (next_page.indexOf(chapter_url) >= 0) {
+    //     // next page in same chapter
+    //     links.push(next_page); 
+    //   }
+    // }
 
     links.push(page.url);
     
+    $('.r.m .l select').first().children().each(function() {
+      var title = $(this).text();
+      if (title.toLowerCase() != 'comments') {
+        links.push(chapter_url + $(this).attr('value') + '.html');
+      }
+    });
+
     // console.log(links);
     // if (links.length == 0) {
     //   console.log('No prev_page or next_page link found');
@@ -88,7 +96,7 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
         var chapter_page = options.chapter_pages[prop];
         chapter_images = chapter_images.concat(chapter_page.images);
       }
-      console.log(chapter_images);
+      // console.log(chapter_images);
 
       // Reset chapter_pages
       options.chapter_pages = {};
@@ -101,10 +109,14 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
       // console.log('Page output dir    : ' + page.output_dir);
       // console.log('Output dir         : ' + output_dir);
 
-      var output_dir = page.output_dir;
+      var chapter_url_obj = urlutil.parse(chapter_url);
+      var output_dir_name = path.basename(chapter_url_obj.pathname);
+      var output_dir = (options.output_dir || '.') + '/' + output_dir_name;      
+
+      // var output_dir = page.output_dir;
 
       var chapter_title = $('#series h1.no').text().trim();
-      
+
       // Save current state
       var state_data = {
         output_dir: path.basename(output_dir),
@@ -162,6 +174,13 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
     }
   } else if ($('#chapters').length) {
     var chapter_links = saver.getLinks($, page, '#chapters', { filters: ['http://mangafox.me/manga/'] });
+    for (var i = 0; i < chapter_links.length; i++) {
+      var chapter_link = chapter_links[i];
+      if (chapter_link.indexOf('.html') > 0) {
+        var chapter_link_obj = urlutil.parse(chapter_link);
+        chapter_links[i] = chapter_link.replace(path.basename(chapter_link_obj.pathname),'');
+      }
+    }
     console.log(chapter_links);
 
     saver.processPages(chapter_links, options, function(err) {
