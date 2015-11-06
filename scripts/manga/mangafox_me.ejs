@@ -3,7 +3,10 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
   if ($('#viewer').length) {
 
     var link_obj = urlutil.parse(page.url);
-    var chapter_url = page.url.replace(path.basename(link_obj.pathname),'');
+    var chapter_url = page.url;
+    if (page.url.indexOf('.html') > 0) {
+      chapter_url = page.url.replace(path.basename(link_obj.pathname),'');
+    }
     // console.log('Manga chapter page: ' + chapter_url);
 
     var links = [];
@@ -101,7 +104,7 @@ saver.bindPageHandler('http://mangafox.me/manga/', function($, page, options, ca
       var output_dir = page.output_dir;
 
       var chapter_title = $('#series h1.no').text().trim();
-
+      
       // Save current state
       var state_data = {
         output_dir: path.basename(output_dir),
