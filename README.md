@@ -8,27 +8,26 @@ npm install -g websaver/
 ```
 
 ####Usage
+```
 Download page to local directory
-```
-websaver download <page_url> <output_dir> [--force]
-```
+    websaver download <page_url> <output_dir> [--force]
+    
 Update local directory
-```
-websaver update <output_dir>
-```
+    websaver update <output_dir>
+    
 Add page to download list (into state file in parent directory)
-```
-websaver add-page <page_url> <output_dir>
-```
+    websaver add-page <page_url> <output_dir>
+    
 Download images to local directory
-```
-websaver download-image <page_url> <output_dir> [SELECTOR]
-```
+    websaver download-image <page_url> <output_dir> [SELECTOR]
+    
 Run script
-```
-websaver run-script <SCRIPT-FILE> <page_url> <output_dir>
+    websaver run-script <SCRIPT-FILE> <page_url> <output_dir>
 ```
 
 ####Customize
-Check script files in scripts/
+
+Write script and run it with ```websaver run-script```
+
+See examples in scripts/
 
