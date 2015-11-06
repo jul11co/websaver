@@ -1,7 +1,7 @@
 # websaver
 Extensible web content downloader
 
-####Install
+### Installation
 
 From npm
 
@@ -16,7 +16,9 @@ git clone https://github.com/jul11co/websaver.git
 npm install -g websaver/
 ```
 
-####Usage
+### Usage
+Currently, supports downloading images from some manga sites.
+
 ```
 Download page to local directory
     websaver download <page_url> <output_dir> [--force]
@@ -34,9 +36,15 @@ Run script
     websaver run-script <SCRIPT-FILE> <page_url> <output_dir>
 ```
 
-####Customize
+### Customize
 
-Write script and run it with ```websaver run-script```
-
+Write [EJS](https://github.com/mde/ejs) script and run it with
+```
+websaver run-script <SCRIPT-FILE> <page_url> <output_dir>
+```
 See examples in scripts/
 
+### License
+
+Licensed under the Apache License, Version 2.0
+(<http://www.apache.org/licenses/LICENSE-2.0>)
