@@ -1,6 +1,6 @@
 {
   "name": "websaver",
-  "version": "0.0.3",
+  "version": "0.0.3.1",
   "description": "websaver - Extensible web content downloader",
   "author": "jul11co (jul.eleven.co@gmail.com)",
   "license": "Apache",

@@ -239,7 +239,7 @@ saver.processPages = function(links, options, callback) {
     var link = links[i];
     if (typeof options.refresh == 'undefined') {
       var saved_data = saver.getStateData(link);
-      if (typeof saved_data == 'undefined' || !saved_data.done) {
+      if (options.force || typeof saved_data == 'undefined' || !saved_data.done) {
         process_queue.push(link);
       }
     }

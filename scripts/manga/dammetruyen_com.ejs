@@ -56,7 +56,7 @@ saver.bindPageHandler('dammetruyen.com', function($, page, options, callback) {
       return callback();
     }
 
-    var chapter_images = saver.getImages($, page, 'p');
+    var chapter_images = saver.getImages($, page, '');
     console.log(chapter_images);
 
     var chapter_url = options.current_chapter.url;
