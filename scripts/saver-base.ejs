@@ -194,7 +194,7 @@ saver.processPage = function(link, options, callback) {
     options.retry_count = 0;
 
     var $ = result.$;
-    var page = { url: result.url };
+    var page = { url: result.url, html: result.html };
     page.title = $('title').first().text();
     if (page.title) {
       page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');

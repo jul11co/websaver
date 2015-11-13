@@ -1,0 +1,149 @@
+<%
+saver.bindPageHandler('dammetruyen.com', function($, page, options, callback) {
+  if ($('#book_chapters_top').length) {
+
+    var chapter_url = page.url;
+    var chapter_title = $('.post .entry .ttl').text().trim();
+
+    var chapter_script = '';
+    $('script').each(function() {
+      chapter_script += $(this).html();
+    });
+
+    if (!chapter_script) {
+      return callback();
+    }
+
+    var tmp = extractSubstring(chapter_script, 'loadingBookChapters(', ');');
+    if (tmp == null) {
+      console.log('Book_id and chapter not found!');
+      return callback();
+    }
+    tmp = replaceAll(tmp,'\'','');
+    var book_id_and_chapter = tmp.split(",");
+    if (!book_id_and_chapter || book_id_and_chapter.length != 2) {
+      console.log('Invalid book_id and chapter: ' + book_id_and_chapter);
+      return callback();
+    }
+    var book_id = book_id_and_chapter[0].trim();
+    var chapter = book_id_and_chapter[1].trim();
+
+    console.log('book: ' +  book_id + '; chapter: ' + chapter);
+
+    var chapter_url_obj = urlutil.parse(chapter_url);
+    var output_dir_name = path.basename(chapter_url_obj.pathname);
+    output_dir_name = output_dir_name.replace('.html', '');
+
+    options.current_chapter = {
+      url: chapter_url,
+      title: chapter_title,
+      output_dir: (options.output_dir || '.') + '/' + output_dir_name
+    };
+
+    var chapter_images_page = 'http://dammetruyen.com/truyen/gen_html_chapter/' + book_id + '/' + chapter;
+
+    // Process next page
+    saver.processPage(chapter_images_page, options, function(err) {
+      if (err) {
+        return callback(err);
+      }
+      callback();
+    });
+  } else if (page.url.indexOf('http://dammetruyen.com/truyen/gen_html_chapter/') >= 0) {
+
+    if (typeof options.current_chapter == 'undefined') {
+      console.log('Invalid current chapter');
+      return callback();
+    }
+
+    var chapter_images = saver.getImages($, page, 'p');
+    console.log(chapter_images);
+
+    var chapter_url = options.current_chapter.url;
+    var chapter_title = options.current_chapter.title;
+    var chapter_output_dir = options.current_chapter.output_dir;
+
+    // reset options.current_chapter
+    delete options.current_chapter;
+
+    var state_data = {
+      output_dir: path.basename(chapter_output_dir),
+      chapter_title: chapter_title,
+      chapter_images: chapter_images,
+      done: false
+    };
+    saver.setStateData(chapter_url, state_data);
+
+    saver.downloadImages(chapter_images, { 
+      output_dir: chapter_output_dir,
+      skip_if_exist: true
+    }, function(err, images) {
+      if (err) {
+        console.log(err);
+        return callback(err);
+      }
+
+      saver.updateStateData(chapter_url, { 
+        chapter_images: images, 
+        done: true, 
+        last_update: new Date() 
+      }, true);
+
+      saver.renderTemplate('mangaviewer.ejs', {
+        chapter_title: chapter_title,
+        chapter_images: images
+      }, function(err, result) {
+        if (!err) {
+          saver.saveHtmlSync(chapter_output_dir + '/reader.html', result.html);
+        }
+        callback();
+      });
+    });
+  } else if ($('#book_chapters').length) {
+
+    saver.setStateData('url', page.url);
+    
+    var page_script = '';
+    $('script').each(function() {
+      page_script += $(this).html();
+    });
+
+    if (!page_script) {
+      return callback();
+    }
+
+    var tmp = extractSubstring(page_script, 'loadingBookChapters(', ');');
+    if (tmp == null) {
+      console.log('Book_id not found!');
+      return callback();
+    }
+    tmp = replaceAll(tmp,'\'','');
+    if (!tmp || tmp == '') {
+      console.log('Invalid book_id (empty)');
+      return callback();
+    }
+    var book_id = tmp;
+
+    var chapter_list_page = 'http://dammetruyen.com/truyen/gen_list_chapters/' + book_id;
+
+    // Process next page
+    saver.processPage(chapter_list_page, options, function(err) {
+      if (err) {
+        return callback(err);
+      }
+      callback();
+    });
+  } else if (page.url.indexOf('http://dammetruyen.com/truyen/gen_list_chapters/') >= 0) {
+
+    page.chapter_links = saver.getLinks($, page, 'ul.lst');
+    console.log(page.chapter_links);
+
+    saver.processPages(page.chapter_links, options, function(err) {
+      if (err) return callback(err);
+      callback();
+    });
+  } else {
+    callback();
+  }
+});
+%>
