@@ -39,7 +39,7 @@ saver.bindPageHandler('truyentranhtuan.com', function($, page, options, callback
         });
       }
     });
-    console.log(chapter_images);
+    if (options.verbose) console.log(chapter_images);
 
     var state_data = {
       output_dir: path.basename(page.output_dir),
@@ -64,22 +64,23 @@ saver.bindPageHandler('truyentranhtuan.com', function($, page, options, callback
         last_update: new Date() 
       }, true);
 
-      saver.renderTemplate('mangaviewer.ejs', {
-        chapter_title: chapter_title,
-        chapter_images: images
-      }, function(err, result) {
-        if (!err) {
-          saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
-        }
-        callback();
-      });
+      callback();
+      // saver.renderTemplate('mangaviewer.ejs', {
+      //   chapter_title: chapter_title,
+      //   chapter_images: images
+      // }, function(err, result) {
+      //   if (!err) {
+      //     saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
+      //   }
+      //   callback();
+      // });
     });
   } else if ($('#manga-chapter').length) {
 
     saver.setStateData('url', page.url);
     
     page.chapter_links = saver.getLinks($, page, '#manga-chapter');
-    console.log(page.chapter_links);
+    if (options.verbose) console.log(page.chapter_links);
 
     saver.processPages(page.chapter_links, options, function(err) {
       if (err) return callback(err);

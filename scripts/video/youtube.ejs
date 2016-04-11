@@ -1,0 +1,47 @@
+<%
+saver.bindPageHandler('youtube.com', function($, page, options, callback) {
+  if (page.url.indexOf('https://www.youtube.com/watch?v=') >= 0) {
+
+    saver.updateStateData(page.url, {
+      done: false
+    });
+
+    saver.getVideoInfo(page.url, options, function(err, video_info) {
+      if (err) {
+        console.log(err);
+        return callback(err);
+      }
+
+      console.log(video_info);
+
+      if (video_info.url && video_info.local_file) {
+        var local_file = options.output_dir + '/' + video_info.local_file;
+        if (saver.fileExists(local_file)) {
+          console.log('File exists: ' + local_file);
+          return callback();
+        }
+        saver.downloadFile(video_info.url, local_file, function(err, result) {
+          if (err) {
+            console.log(err);
+            return callback(err);
+          }
+
+          console.log(result);
+
+          saver.updateStateData(page.url, {
+            video: video_info,
+            done: true, 
+            last_update: new Date()
+          });
+
+          callback();
+        });
+      } else {
+        callback();
+      }
+    });
+  } else {
+    callback();
+  }
+});
+%>

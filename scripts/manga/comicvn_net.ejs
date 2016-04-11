@@ -6,16 +6,29 @@ saver.bindPageHandler('comicvn.net', function($, page, options, callback) {
       page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
     }
 
+    var chapter_url = page.url;
     var chapter_title = page.title.replace(' - Truyện tranh online', '');
 
     var images_list_html = $('#txtarea').html();
     $('#list_images').html(images_list_html);
 
     var chapter_images = saver.getImages($, page, '#list_images');
-    console.log(chapter_images);
+    if (options.verbose) console.log(chapter_images);
+
+    var chapter_url_obj = urlutil.parse(chapter_url);
+    // var output_dir_name = path.basename(chapter_url_obj.pathname);
+    var output_dir_name = path.basename(path.dirname(chapter_url_obj.pathname));
+    var output_dir = path.resolve((options.output_dir || '.'), output_dir_name);
+    
+    if (options.verbose) {
+    console.log('Options output dir : ' + options.output_dir);
+    console.log('Page output dir    : ' + page.output_dir);
+    console.log('Output dir name    : ' + output_dir_name);
+    console.log('Output dir         : ' + output_dir);
+    }
 
     var state_data = {
-      output_dir: path.basename(page.output_dir),
+      output_dir: output_dir_name, // path.basename(page.output_dir),
       chapter_title: chapter_title,
       chapter_images: chapter_images,
       done: false
@@ -23,7 +36,7 @@ saver.bindPageHandler('comicvn.net', function($, page, options, callback) {
     saver.setStateData(page.url, state_data);
 
     saver.downloadImages(chapter_images, {
-      output_dir: page.output_dir,
+      output_dir: output_dir, // page.output_dir,
       skip_if_exist: true
     }, function(err, images) {
       if (err) {
@@ -37,22 +50,23 @@ saver.bindPageHandler('comicvn.net', function($, page, options, callback) {
         last_update: new Date() 
       }, true);
 
-      saver.renderTemplate('mangaviewer.ejs', {
-        chapter_title: chapter_title,
-        chapter_images: images
-      }, function(err, result) {
-        if (!err) {
-          saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
-        }
-        callback();
-      });
+      callback();
+      // saver.renderTemplate('mangaviewer.ejs', {
+      //   chapter_title: chapter_title,
+      //   chapter_images: images
+      // }, function(err, result) {
+      //   if (!err) {
+      //     saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
+      //   }
+      //   callback();
+      // });
     });
   } else if ($('.list-chapter').length) {
 
     saver.setStateData('url', page.url);
     
     page.chapter_links = saver.getLinks($, page, '.list-chapter');
-    console.log(page.chapter_links);
+    if (options.verbose) console.log(page.chapter_links);
 
     saver.processPages(page.chapter_links, options, function(err) {
       if (err) {

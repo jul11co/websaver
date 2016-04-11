@@ -1,0 +1,105 @@
+<%
+saver.bindPageHandler('https://www.instagram.com/', function($, page, options, callback) {
+
+  // saver.saveHtmlSync(page.output_dir + '/page.html', page.html);
+  
+  var script = $('script').text();
+  var sharedData = extractSubstring(script, 'window._sharedData = {', '};');
+  sharedData = '{' + sharedData + '}';
+  var sharedDataObj;
+  try {
+    sharedDataObj = JSON.parse(sharedData);
+  } catch(e) {
+    console.log(e);
+    return callback(e);
+  }
+
+  if (!sharedDataObj) {
+    return callback();
+  }
+
+  // saver.updateStateData(page.url, { sharedDataObject: sharedDataObj });
+
+  // get media
+  if (!sharedDataObj['entry_data'] || !sharedDataObj['entry_data']['ProfilePage'] 
+    || sharedDataObj['entry_data']['ProfilePage'].length == 0) {
+    return callback();
+  }
+
+  var user = sharedDataObj['entry_data']['ProfilePage'][0]['user'];
+  if (!user['media']) {
+    return callback();
+  }
+    
+  console.log('Count:', user['media']['count']);
+  console.log('Page info:', user['media']['page_info']);
+
+  var has_previous_page = user['media']['page_info']['has_previous_page'];
+  var has_next_page = user['media']['page_info']['has_next_page'];
+
+  var start_cursor = user['media']['page_info']['start_cursor'];
+  var end_cursor = user['media']['page_info']['end_cursor'];
+
+  if (!user['media']['nodes']) {
+    return callback();
+  }
+
+  var media_nodes = user['media']['nodes'];
+  console.log('Media count:', media_nodes.length);
+
+  var current_media = [];
+  var current_images = [];
+
+  media_nodes.forEach(function(media) {
+    current_media.push({
+      id: media['id'],
+      thumbnail_src: media['thumbnail_src'],
+      display_src: media['display_src'],
+      is_video: media['is_video']
+    });
+    if (!media['is_video']) {
+      current_images.push(media['thumbnail_src']);
+      current_images.push(media['display_src']);
+    }
+  });
+
+  saver.updateStateData(page.url, { 
+    output_dir: path.basename(page.output_dir),
+    title: page.title,
+    media: current_media,
+    done: false, 
+    last_update: new Date()
+  });
+
+  console.log('Page URL:', page.url);
+  console.log('Page output:', page.output_dir);
+
+  // download images
+  saver.downloadImages(current_images, { 
+    output_dir: page.output_dir,
+    skip_if_exist: true
+  }, function(err, images) {
+    if (err) {
+      console.log(err);
+      return callback(err);
+    }
+    
+    saver.updateStateData(page.url, { 
+      images: images,
+      done: true, 
+      last_update: new Date()
+    });
+
+    if (has_next_page && end_cursor != '') {
+      var parts = urlutil.parse(page.url, true);
+      parts.query.max_id = end_cursor;
+      delete parts.search;
+      var next_url = urlutil.format(parts);
+      console.log(next_url);
+      saver.processPage(next_url, options, callback);
+    } else {
+      callback();
+    }
+  });
+});
+%>

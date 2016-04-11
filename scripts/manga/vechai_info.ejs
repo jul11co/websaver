@@ -10,7 +10,7 @@ saver.bindPageHandler('vechai.info', function($, page, options, callback) {
     
     $('#advInPage').remove();
     var chapter_images = saver.getImages($, page, '#contentChapter');
-    console.log(chapter_images);
+    if (options.verbose) console.log(chapter_images);
 
     var state_data = {
       output_dir: path.basename(page.output_dir),
@@ -35,15 +35,16 @@ saver.bindPageHandler('vechai.info', function($, page, options, callback) {
         last_update: new Date() 
       }, true);
 
-      saver.renderTemplate('mangaviewer.ejs', {
-        chapter_title: chapter_title,
-        chapter_images: images
-      }, function(err, result) {
-        if (!err) {
-          saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
-        }
-        callback();
-      });
+      callback();
+      // saver.renderTemplate('mangaviewer.ejs', {
+      //   chapter_title: chapter_title,
+      //   chapter_images: images
+      // }, function(err, result) {
+      //   if (!err) {
+      //     saver.saveHtmlSync(page.output_dir + '/reader.html', result.html);
+      //   }
+      //   callback();
+      // });
     });
   } else if ($('#chapterList').length) {
 
@@ -55,7 +56,7 @@ saver.bindPageHandler('vechai.info', function($, page, options, callback) {
       if(a.toLowerCase() > b.toLowerCase()) return 1;
       return 0;
     });
-    console.log(page.chapter_links);
+    if (options.verbose) console.log(page.chapter_links);
 
     saver.processPages(page.chapter_links, options, function(err) {
       if (err) return callback(err);

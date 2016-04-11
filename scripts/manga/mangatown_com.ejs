@@ -31,7 +31,7 @@ saver.bindPageHandler('www.mangatown.com/manga/', function($, page, options, cal
 
     // Get images on current page
     var images = saver.getImages($, page, '#viewer');
-    console.log(images);
+    if (options.verbose) console.log(images);
 
     // Save to options
     options.chapter_pages[page.url].images = options.chapter_pages[page.url].images.concat(images);
@@ -55,7 +55,7 @@ saver.bindPageHandler('www.mangatown.com/manga/', function($, page, options, cal
         var chapter_page = options.chapter_pages[prop];
         chapter_images = chapter_images.concat(chapter_page.images);
       }
-      // console.log(chapter_images);
+      // if (options.verbose) console.log(chapter_images);
 
       // Reset chapter pages
       options.chapter_pages = {};
@@ -97,16 +97,17 @@ saver.bindPageHandler('www.mangatown.com/manga/', function($, page, options, cal
           last_update: new Date() 
         }, true);
 
-        saver.renderTemplate('mangaviewer.ejs', {
-          chapter_title: chapter_title,
-          chapter_images: images
-        }, function(err, result) {
-          if (!err) {
-            saver.saveHtmlSync(output_dir + '/reader.html', result.html);
-          }
-          // exit here
-          callback();
-        });
+        callback();
+        // saver.renderTemplate('mangaviewer.ejs', {
+        //   chapter_title: chapter_title,
+        //   chapter_images: images
+        // }, function(err, result) {
+        //   if (!err) {
+        //     saver.saveHtmlSync(output_dir + '/reader.html', result.html);
+        //   }
+        //   // exit here
+        //   callback();
+        // });
       });
     } else {
 
@@ -129,7 +130,7 @@ saver.bindPageHandler('www.mangatown.com/manga/', function($, page, options, cal
     }
   } else if ($('.chapter_list').length) {
     var chapter_links = saver.getLinks($, page, '.chapter_list');
-    console.log(chapter_links);
+    if (options.verbose) console.log(chapter_links);
 
     saver.processPages(chapter_links, options, function(err) {
       if (err) return callback(err);

@@ -11,6 +11,11 @@ function urlGetHost(_url) {
   return host_url;
 }
 
+var isHttpUrl = function(string) {
+  var pattern = /^((http|https):\/\/)/;
+  return pattern.test(string);
+}
+
 function isValidLink(link_href) {
   if (!link_href || link_href === '') return false;
   if (link_href.indexOf('#') == 0 
@@ -115,6 +120,69 @@ saver.getLinks = function($, page, selector, options) {
 // options
 // {
 //   blacklist: [String],
+//   visited_links: [String],
+//   filters: [String],
+//   with_title: Boolean
+// }
+saver.getLinks2 = function($, page, selector, options) {
+  // console.log('getLinks()');
+  var blacklist = (options) ? options.blacklist : undefined;
+  var visited_links = (options) ? options.visited_links : undefined;
+  var filters = (options) ? options.filters : undefined;
+  var links = [];
+  var links_details = [];
+  var page_host_url = urlGetHost(page.url);
+  var page_host_url_obj = urlutil.parse(page_host_url);
+  var page_url_obj = urlutil.parse(page_host_url);
+  $('' + selector + ' a').each(function(){
+    var link_href = $(this).attr('href');
+    if (!isValidLink(link_href)) return;
+    var link_title = $(this).text().trim();
+    if (options.with_title && (!link_title || link_title == '')) return;
+    var link_url = link_href;
+    link_url = link_url.replace('http:///', '/');
+    if (link_url.indexOf('//') == 0) {
+      link_url = page_host_url_obj.protocol + link_url;
+    }
+    var link_url_obj = urlutil.parse(link_url);
+    if (!link_url_obj.host) {
+      if (link_url.indexOf('/') > 0) {
+        link_url = urlutil.resolve(page_host_url_obj, link_url_obj);
+      } else {
+        link_url = urlutil.resolve(page_url_obj, link_url_obj);
+      }
+    } else {
+      link_url = urlutil.format(link_url_obj);
+    }
+    $(this).attr('href', link_url);
+    link_url = link_url.split('#')[0];
+    if (typeof blacklist != 'undefined') {
+      for (var i = 0; i < blacklist.length; i++) {
+        if (link_url.indexOf(blacklist[i]) >= 0) return;
+      }
+    }
+    if (typeof visited_links != 'undefined') {
+      if (visited_links.indexOf(link_url) >= 0) return;
+    }
+    if (typeof filters != 'undefined') {
+      for (var i = 0; i < filters.length; i++) {
+        if (link_url.indexOf(filters[i]) == -1) return;
+      }
+    }
+    if (links.indexOf(link_url) == -1) {
+      links.push(link_url);
+      links_details.push({
+        url: link_url,
+        title: link_title
+      });
+    }
+  });
+  return links_details;
+}
+
+// options
+// {
+//   blacklist: [String],
 //   filters: [String]
 // }
 saver.getImages = function($, page, selector, options) {
@@ -127,6 +195,7 @@ saver.getImages = function($, page, selector, options) {
   var page_host_url_obj = urlutil.parse(page_host_url);
   $('' + selector + ' img').each(function(){
     var image_src = $(this).attr('src');
+    var image_alt = $(this).attr('alt');
     if (image_src && image_src != "") {
       if (image_src.indexOf('data:') == 0) return;
       var image_url = image_src;
@@ -153,7 +222,8 @@ saver.getImages = function($, page, selector, options) {
       image_file_name = getUniqueFileName(image_file_names, image_file_name);
       images.push({
         image_src: image_url,
-        image_file: image_file_name
+        image_file: image_file_name,
+        image_alt: image_alt || ''
       });
     }
   });
@@ -176,7 +246,7 @@ saver.processPage = function(link, options, callback) {
   self.downloadPage(link, function(err, result) {
     if (err) {
       if (err.code == "ESOCKETTIMEDOUT" || err.code == "ETIMEDOUT" || err.code == "ECONNRESET") {
-        if (options.retry_count <= 3) {
+        if (options.retry_count < 3) {
           options.retry_count++;
           console.log('Timeout! Retrying...');
           setTimeout(function() {
@@ -200,7 +270,7 @@ saver.processPage = function(link, options, callback) {
       page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
     }
 
-    if (options.verbose) console.log("Page URL: " + page.url);
+    if (options.verbose) console.log("Visit Page: " + page.url);
 
     var link_obj = urlutil.parse(page.url);
     var output_dir_name = path.basename(link_obj.pathname);
@@ -221,7 +291,10 @@ saver.processPage = function(link, options, callback) {
         cb();
       });
     }, function(err) {
-      if (err) return callback(err);
+      if (err) {
+        console.log('processPage:', err);
+        return callback(err);
+      }
       callback();
     });
   });
@@ -264,6 +337,7 @@ saver.processPages = function(links, options, callback) {
     });
   }, function(err) {
     if (err) {
+      console.log('processPages:', err);
       return callback(err);
     }
     callback();
@@ -271,20 +345,120 @@ saver.processPages = function(links, options, callback) {
 }
 %>
 
-<%include download_image%>
 <%include manga/index%>
+<%include video/index%>
+<%include social/index%>
 
 <%
-var scriptMain = function(options) {
-  saver.processPage(options.page_url, options, function(err) {
-    if (err) {
-      console.log(err);
-      saver.exit(err);
-    } else {
-      saver.exit();  
+var scriptMain = function(options, callback) {
+  if (options.download_image) {  
+    var content_selectors = {
+      // 'example.net': 'SELECTOR'
+    };
+
+    if (typeof options.selector == 'undefined' || options.selector == '') {
+      for (var prop in content_selectors) {
+        if (options.page_url && options.page_url.indexOf(prop) >= 0) {
+          options.selector = content_selectors[prop];
+        }
+      }
     }
-  });
+    if (typeof options.selector == 'undefined' || options.selector == '') {
+      options.selector = 'body';
+    }
+
+    saver.downloadPage(options.page_url, function(err, result) {
+      if (err) return callback(err);
+
+      if (!result.$) {
+        return callback(new Error('Invalid HTML ($==null)'));
+      }
+      
+      var $ = result.$;
+      var page = { 
+        url: result.url, 
+        html: result.html 
+      };
+
+      if ($(options.selector).length) {
+        page.title = $('title').first().text();
+        if (page.title) {
+          page.title = page.title.replace(/(\r\n|\n|\r)/gm, '');
+        }
+
+        page.images = saver.getImages($, page, options.selector);
+        console.log(page.images);
+
+        var state_data = {
+          output_dir: '.',
+          title: page.title,
+          selector: options.selector,
+          images: page.images,
+          done: false
+        };
+        saver.setStateData(page.url, state_data);
+
+        saver.downloadImages(page.images, { 
+          output_dir: options.output_dir,
+          skip_if_exist: true
+        }, function(err, images) {
+          if (err) return callback(err);
+
+          saver.updateStateData(page.url, { 
+            images: images, 
+            done: true, 
+            last_update: new Date() 
+          }, true);
+
+          callback();
+        });
+      } else {
+        callback(new Error('Specified selector does not exist'));
+      }
+    });
+  } else if (options.download_video) {  
+    saver.updateStateData(options.page_url, {
+      done: false
+    });
+
+    saver.getVideoInfo(options.page_url, options, function(err, video_info) {
+      if (err) return callback(err);
+
+      console.log(video_info);
+
+      if (video_info.url && video_info.local_file) {
+        var local_file = options.output_dir + '/' + video_info.local_file;
+        if (saver.fileExists(local_file)) {
+          console.log('File exists: ' + local_file);
+          return callback();
+        }
+        saver.downloadFile(video_info.url, local_file, function(err, result) {
+          if (err) return callback(err);
+
+          console.log(result);
+
+          saver.updateStateData(options.page_url, {
+            video: video_info,
+            done: true, 
+            last_update: new Date()
+          });
+
+          callback();
+        });
+      } else {
+        callback();
+      }
+    });
+  } else {
+    saver.processPage(options.page_url, options, callback);
+  }
 }
 
-scriptMain(options);
+scriptMain(options, function(err) {
+  if (err) {
+    console.log(err);
+    return saver.exit(err);
+  }
+  saver.exit();
+});
 %>
